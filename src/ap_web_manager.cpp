@@ -8,7 +8,7 @@
 #include <WiFi.h>
 #include <WebServer.h>
 
-extern WebServer server;
+WebServer server(80);
 extern uint32_t getUartByteCounter();
 extern uint32_t getUartFrameCounter();
 extern uint32_t getUartFooterDropCounter();
@@ -508,6 +508,11 @@ void setupAPWebServer()
         Serial.println("[AP WEB] Failed to start access point");
     }
 
+    server.on("/", []()
+              {
+                  server.sendHeader("Location", "/ap");
+                  server.send(302, "text/plain", "");
+              });
     server.on("/ap", handleAPRoot);
     server.on("/wifiinfo", handleWifiInfoPage);
     server.on("/apstatus", handleAPStatus);
@@ -534,10 +539,17 @@ void setupAPWebServer()
     server.on("/smoclearcycles", handleSmoClearCycles);
 #endif
 
+    server.begin();
+
     Serial.println("[AP WEB] Started");
     Serial.print("[AP WEB] SSID: ");
     Serial.println(AP_SSID);
     Serial.println("[AP WEB] URL : http://4.4.4.4/ap");
+}
+
+void handleAPWebClient()
+{
+    server.handleClient();
 }
 
 //==================================================

@@ -7,7 +7,6 @@
 #include <config.h>
 #include <time_manager.h>
 #include <record_manager.h>
-#include <web_manager.h>
 #include <telegram_manager.h>
 #include <frame_decoder.h>
 #include <ESPmDNS.h>
@@ -94,7 +93,6 @@ void beginTelegramCommandTask();
 void sendHelpMenu();
 void sendStatusReport();
 void sendRawLog();
-void sendWifiInfo();
 void processWifiConnection();
 // UART receive and queue
 void readUART();
@@ -182,7 +180,6 @@ void setup()
   WiFi.persistent(true);
 
   setupAPWebServer();
-  setupWebServer();
   setupTime();
 
   Serial.println("[WiFi] Connecting to saved station in background...");
@@ -209,7 +206,7 @@ void loop()
 #endif
 
   // Process requests from both the station and access-point interfaces.
-  handleWebClient();
+  handleAPWebClient();
   processWifiConnection();
 
   readUART();
@@ -303,7 +300,6 @@ bool checkTelegramCommands()
     String cmdHelp = "/help" + suffix;
     String cmdRaw = "/viewraw" + suffix;
     String cmdClear = "/clear" + suffix;
-    String cmdWifi = "/wifi" + suffix;
     String cmdAP = "/ap" + suffix;
 
     // Report the current status (/status).
@@ -323,11 +319,6 @@ bool checkTelegramCommands()
 
       if (!sendTelegramHTMLNow("Web error log cleared.\nStored Records: 0/50"))
         sendTelegramHTMLPriority("Web error log cleared.\nStored Records: 0/50");
-    }
-    // Return Wi-Fi information and the Web URL (/wifi).
-    else if (telegramCommandMatches(text, cmdWifi))
-    {
-      sendWifiInfo();
     }
     // Return access-point information and its Web URL (/ap).
     else if (telegramCommandMatches(text, cmdAP))
@@ -555,25 +546,11 @@ void sendHelpMenu()
   helpMsg += "<code>/status" + suffix + "</code> : System status.\n";
   helpMsg += "<code>/viewraw" + suffix + "</code> : Last 10 UART frames.\n";
   helpMsg += "<code>/clear" + suffix + "</code> : Clear web error log.\n";
-  helpMsg += "<code>/wifi" + suffix + "</code> : WiFi information.\n";
   helpMsg += "<code>/ap" + suffix + "</code> : AP web information.\n";
   helpMsg += "<code>/help" + suffix + "</code> : Show this menu.\n\n";
 
   if (!sendTelegramHTMLNow(helpMsg))
     sendTelegramHTMLPriority(helpMsg);
-}
-
-void sendWifiInfo()
-{
-  String msg = "<b>WiFi Information</b>\n";
-  msg += "====================\n";
-  msg += "Device: <code>" + String(DEVICE_NAME) + "</code>\n";
-  msg += "SSID: <code>" + WiFi.SSID() + "</code>\n";
-  msg += "IP: <code>" + WiFi.localIP().toString() + "</code>\n";
-  msg += "Web: <code>http://" + String(MDNS_NAME) + ".local</code>";
-
-  if (!sendTelegramHTMLNow(msg))
-    sendTelegramHTMLPriority(msg);
 }
 
 //==================================================

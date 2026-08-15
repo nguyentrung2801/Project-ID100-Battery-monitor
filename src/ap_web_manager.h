@@ -4,6 +4,7 @@
 #include <Arduino.h>
 
 void setupAPWebServer();
+void handleAPWebClient();
 
 const char *getAPSSID();
 const char *getAPPassword();
