@@ -11,23 +11,16 @@ void setupTime()
         "time.google.com"
     );
 
-    struct tm timeinfo;
-
-    // Timestamps are used in persisted logs, so setup waits for a valid clock.
-    while (!getLocalTime(&timeinfo))
-    {
-        Serial.println("[NTP] Waiting for time sync...");
-        delay(500);
-    }
-
-    Serial.println("[NTP] Time synchronized");
+    // ESP32 SNTP synchronizes automatically when Internet access becomes available.
+    Serial.println("[NTP] Background synchronization configured");
 }
 
 String getTimestamp()
 {
     struct tm timeinfo;
 
-    if (!getLocalTime(&timeinfo))
+    // Keep offline AP operation responsive; use N/A until background SNTP completes.
+    if (!getLocalTime(&timeinfo, 10))
     {
         return "N/A";
     }

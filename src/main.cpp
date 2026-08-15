@@ -2,7 +2,6 @@
 #include <WiFiClientSecure.h>
 #include <Preferences.h>
 #include <ArduinoJson.h>
-#include <WiFiManager.h>
 #include <LittleFS.h>
 
 #include <config.h>
@@ -96,6 +95,7 @@ void sendHelpMenu();
 void sendStatusReport();
 void sendRawLog();
 void sendWifiInfo();
+void processWifiConnection();
 // UART receive and queue
 void readUART();
 bool enqueueFrame(uint8_t *frame, unsigned long rxTime);
@@ -176,32 +176,18 @@ void setup()
   setupSmoSimulator(SBUart);
 #endif
 
-  // Start WiFiManager to configure or connect to Wi-Fi.
-  WiFiManager wm;
-  // wm.resetSettings(); // Uncomment to erase saved Wi-Fi settings and reconfigure them.
+  // AP and STA are independent: the local control page starts immediately,
+  // while the station connects to saved router credentials in the background.
+  WiFi.mode(WIFI_AP_STA);
+  WiFi.persistent(true);
 
-  Serial.println("Connecting Wi-Fi via WiFiManager...");
-  if (!wm.autoConnect("ESP_Jig_Setup"))
-  {
-    Serial.println("Failed to connect Wi-Fi and hit timeout. Restarting ESP...");
-    ESP.restart();
-  }
+  setupAPWebServer();
+  setupWebServer();
+  setupTime();
 
-  Serial.println("Wi-Fi Connected Successfully!");
-  Serial.print("IP Address: ");
-  Serial.println(WiFi.localIP());
-
-  if (MDNS.begin(MDNS_NAME))
-  {
-    Serial.println("[mDNS] Started");
-    Serial.print("[mDNS] URL: http://");
-    Serial.print(MDNS_NAME);
-    Serial.println(".local");
-  }
-  else
-  {
-    Serial.println("[mDNS] Failed");
-  }
+  Serial.println("[WiFi] Connecting to saved station in background...");
+  WiFi.setAutoReconnect(true);
+  WiFi.begin();
 
   // Send a startup notification to Telegram.
   beginTelegramCommandTask();
@@ -210,13 +196,7 @@ void setup()
   sendTelegramHTML(initMsg);
 
 
-  // Synchronize NTP time and start the Web servers.
-  setupTime();
-  setupWebServer();
-  setupAPWebServer();
-
-  Serial.print("[WEB] Open browser: http://");
-  Serial.println(WiFi.localIP());
+  Serial.println("[AP WEB] Open browser: http://4.4.4.4/ap");
 }
 
 //==================================================
@@ -228,8 +208,9 @@ void loop()
   updateRelays();
 #endif
 
-  // Process Web Dashboard requests.
+  // Process requests from both the station and access-point interfaces.
   handleWebClient();
+  processWifiConnection();
 
   readUART();
   processQueuedFrames();
@@ -242,6 +223,33 @@ void loop()
   handleSmoSimulator();
 #endif
   processRecordStorage();
+}
+
+void processWifiConnection()
+{
+  static wl_status_t previousStatus = WL_NO_SHIELD;
+  static bool mdnsStarted = false;
+  const wl_status_t currentStatus = WiFi.status();
+
+  if (currentStatus == previousStatus)
+    return;
+
+  previousStatus = currentStatus;
+
+  if (currentStatus == WL_CONNECTED)
+  {
+    Serial.print("[WiFi] Station connected. IP: ");
+    Serial.println(WiFi.localIP());
+
+    if (!mdnsStarted)
+    {
+      mdnsStarted = MDNS.begin(MDNS_NAME);
+      Serial.println(mdnsStarted ? "[mDNS] Started" : "[mDNS] Failed");
+    }
+    return;
+  }
+
+  Serial.println("[WiFi] Station disconnected; local AP remains available");
 }
 
 

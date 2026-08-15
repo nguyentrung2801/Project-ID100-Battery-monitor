@@ -30,6 +30,7 @@ void handleSmoClearLogs();
 void handleSmoClearCycles();
 void handleWifiInfoPage();
 void handleAPStatus();
+void handleSaveWifi();
 void handleResetWifi();
 
 //==================================================
@@ -437,7 +438,11 @@ void handleWifiInfoPage()
     html += ".panel{max-width:760px;margin:18px auto;background:white;border:1px solid #e5e7eb;border-radius:16px;padding:18px;box-shadow:0 4px 14px rgba(0,0,0,0.10);}";
     html += ".title{font-size:20px;font-weight:900;color:#111827;margin-bottom:12px;}";
     html += ".info{background:#eef3fb;border-radius:12px;padding:14px;font-size:16px;color:#111827;font-weight:800;line-height:1.8;}";
+    html += "label{display:block;margin-top:12px;font-size:14px;font-weight:800;color:#374151;}";
+    html += "input{width:100%;box-sizing:border-box;margin-top:5px;padding:12px;font-size:16px;border:1px solid #cbd5e1;border-radius:10px;}";
     html += "button{width:100%;border:none;border-radius:12px;padding:13px;font-size:15px;font-weight:900;color:white;margin-top:14px;background:#d32f2f;}";
+    html += ".connect{background:#16a34a;}";
+    html += ".note{font-size:13px;color:#64748b;margin-top:10px;line-height:1.5;}";
     html += "</style></head><body>";
     html += "<a class='back' href='/ap'>Back</a>";
     html += "<h2>";
@@ -453,6 +458,11 @@ void handleWifiInfoPage()
     html += "<div>Telegram Chat: <span id='tgChat'>--</span></div>";
     html += "<div>Telegram Send: <span id='tgSend'>--</span></div>";
     html += "</div>";
+    html += "<div class='title' style='margin-top:20px;'>Router Connection</div>";
+    html += "<label>WiFi SSID<input id='wifiSSID' type='text' maxlength='32' autocomplete='off'></label>";
+    html += "<label>WiFi Password<input id='wifiPassword' type='password' maxlength='64' autocomplete='new-password'></label>";
+    html += "<button class='connect' onclick='saveWifi()'>SAVE AND CONNECT</button>";
+    html += "<div class='note'>The local JIG access point remains available while the ESP32 connects to this router.</div>";
     html += "<button onclick='resetWifi()'>RESET WIFI SETTINGS</button>";
     html += "</div>";
     html += "<script>";
@@ -464,7 +474,14 @@ void handleWifiInfoPage()
     html += "e=document.getElementById('tgChat');if(e)e.innerText=s.chatId;";
     html += "e=document.getElementById('tgSend');if(e)e.innerText=s.telegramSendStatus;";
     html += "}).catch(()=>{});}";
-    html += "function resetWifi(){if(confirm('Reset saved WiFi and restart device?')){fetch('/resetwifi').then(()=>alert('Device restarting. Connect to ESP_Jig_Setup to configure WiFi.'));}}";
+    html += "function saveWifi(){";
+    html += "const ssid=document.getElementById('wifiSSID').value.trim();";
+    html += "const password=document.getElementById('wifiPassword').value;";
+    html += "if(!ssid){alert('Enter the router WiFi SSID.');return;}";
+    html += "fetch('/savewifi',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'ssid='+encodeURIComponent(ssid)+'&password='+encodeURIComponent(password)})";
+    html += ".then(r=>r.text()).then(t=>alert(t)).catch(()=>alert('Failed to save WiFi settings.'));";
+    html += "}";
+    html += "function resetWifi(){if(confirm('Erase the saved router WiFi settings?')){fetch('/resetwifi').then(()=>alert('Device restarting. Reconnect to the JIG AP and open http://4.4.4.4/ap'));}}";
     html += "setInterval(updateAPStatus,2000);updateAPStatus();";
     html += "</script></body></html>";
 
@@ -481,12 +498,20 @@ void setupAPWebServer()
 
     WiFi.mode(WIFI_AP_STA);
 
-    WiFi.softAPConfig(apIP, gateway, subnet);
-    WiFi.softAP(AP_SSID, AP_PASS);
+    if (!WiFi.softAPConfig(apIP, gateway, subnet))
+    {
+        Serial.println("[AP WEB] Failed to configure AP network");
+    }
+
+    if (!WiFi.softAP(AP_SSID, AP_PASS))
+    {
+        Serial.println("[AP WEB] Failed to start access point");
+    }
 
     server.on("/ap", handleAPRoot);
     server.on("/wifiinfo", handleWifiInfoPage);
     server.on("/apstatus", handleAPStatus);
+    server.on("/savewifi", HTTP_POST, handleSaveWifi);
     server.on("/resetwifi", handleResetWifi);
 #if ENABLE_RF_CONTROL
     server.on("/appress", handleAPPress);
@@ -637,4 +662,29 @@ void handleResetWifi()
     WiFi.disconnect(true, true);
     delay(500);
     ESP.restart();
+}
+
+void handleSaveWifi()
+{
+    if (!server.hasArg("ssid"))
+    {
+        server.send(400, "text/plain", "Missing WiFi SSID");
+        return;
+    }
+
+    String ssid = server.arg("ssid");
+    String password = server.hasArg("password") ? server.arg("password") : "";
+    ssid.trim();
+
+    if (ssid.length() == 0 || ssid.length() > 32 || password.length() > 64)
+    {
+        server.send(400, "text/plain", "Invalid WiFi credentials");
+        return;
+    }
+
+    // WiFi.begin stores the station credentials while WIFI_AP_STA keeps the
+    // local JIG network and Web interface running during the connection attempt.
+    WiFi.mode(WIFI_AP_STA);
+    WiFi.begin(ssid.c_str(), password.c_str());
+    server.send(200, "text/plain", "WiFi settings saved. Connecting in background; the JIG AP remains available.");
 }
