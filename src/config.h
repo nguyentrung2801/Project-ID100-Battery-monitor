@@ -1,107 +1,72 @@
-#ifndef CONFIG_H
-#define CONFIG_H
+#pragma once
 
-#ifndef DEVICE_NAME
-#define DEVICE_NAME "JIG-01"
-#endif
+// Device identity
+#define DEVICE_NAME "ID100 Battery Monitor"
+#define FIRMWARE_VERSION "0.1.0-demo"
+#define SCHEMA_VERSION 1
 
-#ifndef ENABLE_RF_CONTROL
-#define ENABLE_RF_CONTROL 1
-#endif
+// Local access point
+#define AP_SSID "ID100-Battery-Monitor"
+#define AP_PASSWORD "12345678"
 
-#ifndef ENABLE_SMO_SIMULATOR
-#define ENABLE_SMO_SIMULATOR 1
-#endif
+// ADC channels and sampling
+#define ADC_CHANNEL_COUNT 2
+#define ADC_SAMPLES 32
+#define ADC_SAMPLE_DELAY_US 150
+#define ADC_SAMPLE_INTERVAL_MS 1000UL
+#define SAMPLES_PER_MINUTE 60
+#define MINUTE_AVERAGES_PER_TELEMETRY 10
+#define PIN_BATTERY_1 3
+#define PIN_BATTERY_2 4
 
-#ifndef ENABLE_SERIAL_LOG
-#define ENABLE_SERIAL_LOG 1
-#endif
+// Battery conversion and thresholds
+// Common linear calibration from the averaged GPIO3/GPIO4 sweep.
+// battery_mV = adc_mV * slope + offset_mV
+#define ADC_CAL_SLOPE 5.98030284811045
+#define ADC_CAL_OFFSET_MV -41.9597893112993
+#define BATTERY_EMPTY_MV 2400
+#define BATTERY_LOW_MV 2500
+#define BATTERY_NORMAL_MV 2500
+#define BATTERY_FULL_MV 3300
+#define BATTERY_DISCONNECTED_MV 500
+#define BATTERY_OVER_VOLTAGE_MV (BATTERY_FULL_MV + 150)
 
-#ifndef BOT_TOKEN
-#define BOT_TOKEN "8105256477:AAEwQ4J4aAkNWsjPB0Yzrw8X2xJe5J8vEx0"
-#endif
-
-#ifndef CHAT_ID
-#define CHAT_ID "-1003309157934"
-#endif
-
-#ifndef TELEGRAM_COMMAND_SUFFIX
-#define TELEGRAM_COMMAND_SUFFIX "1"
-#endif
-
-#ifndef AP_SSID
-#define AP_SSID "Auto_Click_JIG01"
-#endif
-
-#define AP_PASS "12345678"
-
-#ifndef MDNS_NAME
-#define MDNS_NAME "gdo-monitor-01"
-#endif
-
-#ifndef PIN_SMO_UART_TX
-#define PIN_SMO_UART_TX 5
-#endif
-
-#ifndef PIN_SMO_UART_RX
-#define PIN_SMO_UART_RX 6
-#endif
-
-#ifndef PIN_SB_UART_RX
-#define PIN_SB_UART_RX 10
-#endif
-
-#ifndef PIN_SB_UART_TX
-#define PIN_SB_UART_TX 1
-#endif
-
-#define PIN_UART_TX PIN_SMO_UART_TX
-#define PIN_UART_RX PIN_SMO_UART_RX
-
-#ifndef NUM_RELAYS
-#define NUM_RELAYS 4
-#endif
-
-#ifndef RELAY_PULSE_MS
-#define RELAY_PULSE_MS 200
-#endif
-
-#ifndef RELAY_ACTIVE_LOW
-#define RELAY_ACTIVE_LOW 1
-#endif
-
-#if RELAY_ACTIVE_LOW
-#define RELAY_ACTIVE_LEVEL LOW
-#define RELAY_INACTIVE_LEVEL HIGH
-#else
-#define RELAY_ACTIVE_LEVEL HIGH
-#define RELAY_INACTIVE_LEVEL LOW
-#endif
-
-#define RELAY_CONFIRM_TIMEOUT_MS 15000
-
-#ifndef RELAY_1_PIN
-#define RELAY_1_PIN 3
-#endif
-
-#ifndef RELAY_2_PIN
-#define RELAY_2_PIN 7
-#endif
-
-#ifndef RELAY_3_PIN
-#define RELAY_3_PIN 8
-#endif
-
-#ifndef RELAY_4_PIN
-#define RELAY_4_PIN 9
-#endif
-
-#define UART_BAUDRATE 115200
-
-#define FRAME_SIZE 11
-#define FRAME_QUEUE_SIZE 10
-#define MAX_RECORDS 50
-
-#define UART_FRAME_GAP_MS 20
-
-#endif
+// Production EMQX Serverless broker.
+#define MQTT_HOST "a5611661.ala.asia-southeast1.emqxsl.com"
+#define MQTT_PORT 8883
+#define MQTT_USERNAME "esp32c3-001"
+#define MQTT_PASSWORD "ZIutdn9Z38QzhC6E"
+// Increment this value whenever the built-in MQTT credentials change so an
+// already-flashed device refreshes its MQTT settings stored in NVS.
+#define MQTT_CONFIG_REVISION 4
+#define MQTT_KEEP_ALIVE_SECONDS 30
+static constexpr char MQTT_CA_CERT[] = R"PEM(
+-----BEGIN CERTIFICATE-----
+MIIDjjCCAnagAwIBAgIQAzrx5qcRqaC7KGSxHQn65TANBgkqhkiG9w0BAQsFADBh
+MQswCQYDVQQGEwJVUzEVMBMGA1UEChMMRGlnaUNlcnQgSW5jMRkwFwYDVQQLExB3
+d3cuZGlnaWNlcnQuY29tMSAwHgYDVQQDExdEaWdpQ2VydCBHbG9iYWwgUm9vdCBH
+MjAeFw0xMzA4MDExMjAwMDBaFw0zODAxMTUxMjAwMDBaMGExCzAJBgNVBAYTAlVT
+MRUwEwYDVQQKEwxEaWdpQ2VydCBJbmMxGTAXBgNVBAsTEHd3dy5kaWdpY2VydC5j
+b20xIDAeBgNVBAMTF0RpZ2lDZXJ0IEdsb2JhbCBSb290IEcyMIIBIjANBgkqhkiG
+9w0BAQEFAAOCAQ8AMIIBCgKCAQEAuzfNNNx7a8myaJCtSnX/RrohCgiN9RlUyfuI
+2/Ou8jqJkTx65qsGGmvPrC3oXgkkRLpimn7Wo6h+4FR1IAWsULecYxpsMNzaHxmx
+1x7e/dfgy5SDN67sH0NO3Xss0r0upS/kqbitOtSZpLYl6ZtrAGCSYP9PIUkY92eQ
+q2EGnI/yuum06ZIya7XzV+hdG82MHauVBJVJ8zUtluNJbd134/tJS7SsVQepj5Wz
+tCO7TG1F8PapspUwtP1MVYwnSlcUfIKdzXOS0xZKBgyMUNGPHgm+F6HmIcr9g+UQ
+vIOlCsRnKPZzFBQ9RnbDhxSJITRNrw9FDKZJobq7nMWxM4MphQIDAQABo0IwQDAP
+BgNVHRMBAf8EBTADAQH/MA4GA1UdDwEB/wQEAwIBhjAdBgNVHQ4EFgQUTiJUIBiV
+5uNu5g/6+rkS7QYXjzkwDQYJKoZIhvcNAQELBQADggEBAGBnKJRvDkhj6zHd6mcY
+1Yl9PMWLSn/pvtsrF9+wX3N3KjITOYFnQoQj8kVnNeyIv/iPsGEMNKSuIEyExtv4
+NeF22d+mQrvHRAiGfzZ0JFrabA0UWTW98kndth/Jsw1HKj2ZL7tcu7XUIOGZX1NG
+Fdtom/DzMNU+MeKNhJ7jitralj41E6Vf8PlwUHBHQRFXGU7Aj64GxJUTFy8bJZ91
+8rGOmaFvE7FBcf6IKshPECBV1/MUReXgRPTqh5Uykw7+U0b6LJ3/iyK5S9kJRaTe
+pLiaWN0bfVKfjllDiIGknibVb63dDcY3fe0Dkhvld1927jyNxF1WW6LZZm6zNTfl
+MrY=
+-----END CERTIFICATE-----
+)PEM";
+#define MQTT_RECONNECT_MIN_MS 1000UL
+#define MQTT_RECONNECT_MAX_MS 30000UL
+#define TELEMETRY_QUEUE_LIMIT 200
+#define OFFLINE_HOURLY_COMPACTION_DELAY_MS (3UL * 60UL * 60UL * 1000UL)
+#define OFFLINE_COMPACTION_CHECK_MS 60000UL
+#define TEN_MINUTE_BATCHES_PER_HOUR 6

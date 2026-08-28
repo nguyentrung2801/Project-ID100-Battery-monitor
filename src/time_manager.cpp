@@ -2,32 +2,58 @@
 
 #include <time.h>
 
+namespace
+{
+constexpr long GMT_OFFSET_SECONDS = 0;
+constexpr int DAYLIGHT_OFFSET_SECONDS = 0;
+constexpr time_t MINIMUM_VALID_UNIX_TIME = 1700000000;
+} // namespace
+
 void setupTime()
 {
     configTime(
-        7 * 3600, // GMT+7 (Vietnam time)
-        0,        // No daylight saving time
+        GMT_OFFSET_SECONDS,
+        DAYLIGHT_OFFSET_SECONDS,
         "pool.ntp.org",
-        "time.google.com"
-    );
-
-    // ESP32 SNTP synchronizes automatically when Internet access becomes available.
-    Serial.println("[NTP] Background synchronization configured");
+        "time.google.com");
 }
 
 String getTimestamp()
 {
-    struct tm timeinfo;
-
-    // Keep offline AP operation responsive; use N/A until background SNTP completes.
-    if (!getLocalTime(&timeinfo, 10))
+    struct tm timeInfo;
+    if (!getLocalTime(&timeInfo, 10))
     {
-        return "N/A";
+        return "Chua dong bo";
     }
 
-    char buffer[25];
+    char timestamp[24];
+    strftime(timestamp, sizeof(timestamp), "%Y-%m-%d %H:%M:%S", &timeInfo);
+    return String(timestamp);
+}
 
-    strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", &timeinfo);
+uint32_t getUnixTimestamp()
+{
+    const time_t currentTime = time(nullptr);
+    if (currentTime < MINIMUM_VALID_UNIX_TIME)
+    {
+        return 0;
+    }
 
-    return String(buffer);
+    return static_cast<uint32_t>(currentTime);
+}
+
+String getUtcIsoTimestamp()
+{
+    const time_t currentTime = time(nullptr);
+    if (currentTime < MINIMUM_VALID_UNIX_TIME)
+    {
+        return "";
+    }
+
+    struct tm utcTime;
+    gmtime_r(&currentTime, &utcTime);
+
+    char timestamp[25];
+    strftime(timestamp, sizeof(timestamp), "%Y-%m-%dT%H:%M:%S.000Z", &utcTime);
+    return String(timestamp);
 }

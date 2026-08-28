@@ -1,9 +1,8 @@
-#ifndef TIME_MANAGER_H
-#define TIME_MANAGER_H
+#pragma once
 
 #include <Arduino.h>
 
 void setupTime();
 String getTimestamp();
-
-#endif
+uint32_t getUnixTimestamp();
+String getUtcIsoTimestamp();
