@@ -103,6 +103,29 @@ void telemetryBegin()
     queuePreferences.begin("telemetry", false);
 }
 
+bool telemetryBuildBootstrapPayload(String &payload)
+{
+    JsonDocument document;
+    document["schema_version"] = SCHEMA_VERSION;
+    document["type"] = "telemetry_batch";
+    document["gateway_id"] = getGatewayId();
+    document["gateway_name"] = settingsGet().gatewayName;
+    document["firmware_version"] = FIRMWARE_VERSION;
+    document["boot_id"] = getBootId();
+    document["tester_name"] = settingsGet().testerName;
+    document["test_location"] = settingsGet().testLocation;
+
+    JsonArray measurements = document["measurements"].to<JsonArray>();
+    for (uint8_t channel = 0; channel < ADC_CHANNEL_COUNT; channel++)
+    {
+        addMeasurement(measurements, channel, false);
+    }
+
+    payload = "";
+    serializeJson(document, payload);
+    return measurements.size() == ADC_CHANNEL_COUNT && !payload.isEmpty();
+}
+
 bool captureAndStore(
     uint8_t channelMask,
     bool isBackfill,
@@ -158,15 +181,6 @@ bool telemetryCaptureAndStore(
         isBackfill,
         false,
         aggregationIntervalSeconds);
-}
-
-bool telemetryCaptureInitialAndStore(bool isBackfill)
-{
-    return captureAndStore(
-        (1U << ADC_CHANNEL_COUNT) - 1U,
-        isBackfill,
-        true,
-        1);
 }
 
 bool telemetryPeekOldest(String &path, String &payload)
@@ -321,7 +335,7 @@ uint16_t telemetryCompactBackfillToHourly()
         { return left.path < right.path; });
 
     // A channel can start at a different time from the other channel. Group
-    // batches with the same channel mask so six CH1-only/CH2-only batches can
+    // batches with the same channel mask so single-channel batches can
     // still be compacted correctly even when their files are interleaved.
     std::vector<String> tenMinutePaths;
     for (uint8_t mask = 1; mask < (1U << ADC_CHANNEL_COUNT); mask++)

@@ -18,5 +18,6 @@ bool settingsTestInformationComplete();
 void settingsSave(const AppSettings &settings);
 
 void connectSavedWifi();
+void maintainSavedWifi();
 void saveWifi(const String &ssid, const String &password);
 void clearWifi();

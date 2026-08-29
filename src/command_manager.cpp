@@ -23,6 +23,30 @@ Preferences commandCache;
 volatile uint8_t immediateSampleMask = 0;
 constexpr uint8_t COMMAND_CACHE_SIZE = 10;
 
+String channelKey(uint8_t channel, const char *suffix)
+{
+    return String(suffix) + String(channel);
+}
+
+void persistChannel(uint8_t channel)
+{
+    if (channel >= ADC_CHANNEL_COUNT)
+    {
+        return;
+    }
+
+    const ChannelContext &context = channels[channel];
+    commandCache.putUChar(
+        channelKey(channel, "state").c_str(),
+        static_cast<uint8_t>(context.state));
+    commandCache.putString(
+        channelKey(channel, "session").c_str(),
+        context.sessionId);
+    commandCache.putUInt(
+        channelKey(channel, "sequence").c_str(),
+        context.sequence);
+}
+
 String deviceIdForChannel(uint8_t channel)
 {
     return getDeviceId(channel);
@@ -103,6 +127,27 @@ CommandResponse errorResponse(
 void commandBegin()
 {
     commandCache.begin("command_cache", false);
+    for (uint8_t channel = 0; channel < ADC_CHANNEL_COUNT; channel++)
+    {
+        const uint8_t savedState = commandCache.getUChar(
+            channelKey(channel, "state").c_str(),
+            static_cast<uint8_t>(ChannelState::Idle));
+        channels[channel].state = savedState <= static_cast<uint8_t>(ChannelState::Paused)
+                                      ? static_cast<ChannelState>(savedState)
+                                      : ChannelState::Idle;
+        channels[channel].sessionId = commandCache.getString(
+            channelKey(channel, "session").c_str(),
+            "");
+        channels[channel].sequence = commandCache.getUInt(
+            channelKey(channel, "sequence").c_str(),
+            0);
+
+        Serial.printf(
+            "[Command] Restored CH%u state=%u sequence=%lu\n",
+            channel + 1,
+            static_cast<unsigned>(channels[channel].state),
+            static_cast<unsigned long>(channels[channel].sequence));
+    }
 }
 
 CommandResponse commandHandle(const String &topic, const String &payload)
@@ -173,6 +218,7 @@ CommandResponse commandHandle(const String &topic, const String &payload)
             context.state = ChannelState::Running;
             context.sessionId = command["session_id"] | "";
             immediateSampleMask |= (1U << channel);
+            persistChannel(channel);
         }
     }
     else if (action == "pause" && desiredState == "paused")
@@ -185,6 +231,7 @@ CommandResponse commandHandle(const String &topic, const String &payload)
         else
         {
             context.state = ChannelState::Paused;
+            persistChannel(channel);
         }
     }
     else if (action == "resume" && desiredState == "running")
@@ -203,11 +250,14 @@ CommandResponse commandHandle(const String &topic, const String &payload)
         else
         {
             context.state = ChannelState::Running;
+            persistChannel(channel);
         }
     }
     else if (action == "stop" && desiredState == "stopped")
     {
         context.state = ChannelState::Idle;
+        context.sessionId = "";
+        persistChannel(channel);
         telemetryDiscardDevice(deviceId);
     }
     else
@@ -242,5 +292,7 @@ uint32_t commandNextSequence(uint8_t channel)
         return 0;
     }
 
-    return ++channels[channel].sequence;
+    channels[channel].sequence++;
+    persistChannel(channel);
+    return channels[channel].sequence;
 }

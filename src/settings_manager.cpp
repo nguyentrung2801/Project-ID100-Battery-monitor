@@ -20,6 +20,7 @@ constexpr char KEY_WIFI_PASSWORD[] = "wifi_pass";
 
 Preferences preferences;
 AppSettings currentSettings;
+unsigned long lastWifiAttemptMillis = 0;
 } // namespace
 
 void settingsBegin()
@@ -91,6 +92,30 @@ void connectSavedWifi()
     }
 
     const String password = preferences.getString(KEY_WIFI_PASSWORD, "");
+    WiFi.setAutoReconnect(false);
+    WiFi.begin(ssid.c_str(), password.c_str());
+    lastWifiAttemptMillis = millis();
+}
+
+void maintainSavedWifi()
+{
+    if (WiFi.status() == WL_CONNECTED || WiFi.softAPgetStationNum() > 0)
+    {
+        return;
+    }
+
+    const String ssid = preferences.getString(KEY_WIFI_SSID, "");
+    const unsigned long now = millis();
+    if (ssid.isEmpty() || now - lastWifiAttemptMillis < STA_BACKGROUND_RETRY_MS)
+    {
+        return;
+    }
+
+    // ESP32-C3 has one radio for AP and STA. Retry the saved router only when
+    // nobody is using the configuration AP, so STA scans cannot evict users.
+    lastWifiAttemptMillis = now;
+    const String password = preferences.getString(KEY_WIFI_PASSWORD, "");
+    Serial.printf("[WiFi] Background STA retry: %s\n", ssid.c_str());
     WiFi.begin(ssid.c_str(), password.c_str());
 }
 
@@ -99,6 +124,7 @@ void saveWifi(const String &ssid, const String &password)
     preferences.putString(KEY_WIFI_SSID, ssid);
     preferences.putString(KEY_WIFI_PASSWORD, password);
     WiFi.begin(ssid.c_str(), password.c_str());
+    lastWifiAttemptMillis = millis();
 }
 
 void clearWifi()

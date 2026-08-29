@@ -19,9 +19,10 @@ bool clientStarted = false;
 volatile bool connected = false;
 volatile bool subscribed = false;
 volatile int pendingTelemetryMessageId = -1;
+volatile int pendingBootstrapMessageId = -1;
 volatile bool markBackfillRequested = false;
 volatile bool bootstrapRequested = false;
-bool initialTelemetryQueued = false;
+bool bootstrapPublished = false;
 bool hasBeenMqttOnline = false;
 bool offlineBuffering = false;
 unsigned long offlineStartedMillis = 0;
@@ -38,6 +39,18 @@ String inFlightFile;
 String incomingTopic;
 String incomingPayload;
 String lastStatus = "NOT_STARTED";
+
+bool anyChannelRunning()
+{
+    for (uint8_t channel = 0; channel < ADC_CHANNEL_COUNT; channel++)
+    {
+        if (commandChannelState(channel) == ChannelState::Running)
+        {
+            return true;
+        }
+    }
+    return false;
+}
 
 String gatewayStatusPayload(const char *status)
 {
@@ -139,7 +152,7 @@ esp_err_t mqttEventHandler(esp_mqtt_event_handle_t event)
                 1,
                 true);
         }
-        if (!initialTelemetryQueued)
+        if (!bootstrapPublished)
         {
             bootstrapRequested = true;
         }
@@ -149,6 +162,7 @@ esp_err_t mqttEventHandler(esp_mqtt_event_handle_t event)
         connected = false;
         subscribed = false;
         pendingTelemetryMessageId = -1;
+        pendingBootstrapMessageId = -1;
         inFlightFile = "";
         lastStatus = "DISCONNECTED";
         Serial.println("[MQTT] Disconnected");
@@ -161,6 +175,14 @@ esp_err_t mqttEventHandler(esp_mqtt_event_handle_t event)
         break;
 
     case MQTT_EVENT_PUBLISHED:
+        if (event->msg_id == pendingBootstrapMessageId)
+        {
+            pendingBootstrapMessageId = -1;
+            bootstrapRequested = false;
+            bootstrapPublished = true;
+            lastStatus = "BOOTSTRAP_PUBACK_RECEIVED";
+            break;
+        }
         if (event->msg_id == pendingTelemetryMessageId)
         {
             telemetryAcknowledge(inFlightFile);
@@ -233,7 +255,8 @@ void reconnectWhenDue()
 
 void publishOldestQueuedBatch()
 {
-    if (!connected || pendingTelemetryMessageId >= 0)
+    if (!connected || !subscribed || !anyChannelRunning() ||
+        pendingTelemetryMessageId >= 0 || pendingBootstrapMessageId >= 0)
     {
         return;
     }
@@ -264,6 +287,42 @@ void publishOldestQueuedBatch()
     {
         lastStatus = "PUBLISH_FAILED";
     }
+}
+
+void publishBootstrapWhenRequested()
+{
+    if (!bootstrapRequested || bootstrapPublished || !connected || !subscribed ||
+        pendingBootstrapMessageId >= 0 || pendingTelemetryMessageId >= 0)
+    {
+        return;
+    }
+
+    if (!settingsTestInformationComplete())
+    {
+        lastStatus = "WAITING_FOR_TEST_INFO";
+        return;
+    }
+
+    batterySampleAll();
+    String payload;
+    if (!telemetryBuildBootstrapPayload(payload))
+    {
+        lastStatus = "BOOTSTRAP_BUILD_FAILED";
+        return;
+    }
+
+    pendingBootstrapMessageId = esp_mqtt_client_enqueue(
+        client,
+        telemetryTopic.c_str(),
+        payload.c_str(),
+        payload.length(),
+        1,
+        0,
+        true);
+
+    lastStatus = pendingBootstrapMessageId >= 0
+                     ? "WAITING_FOR_BOOTSTRAP_PUBACK"
+                     : "BOOTSTRAP_PUBLISH_FAILED";
 }
 
 void manageOfflineBuffer()
@@ -378,25 +437,9 @@ void mqttLoop()
 
     manageOfflineBuffer();
 
-    if (bootstrapRequested && connected && subscribed && !initialTelemetryQueued)
-    {
-        if (!settingsTestInformationComplete())
-        {
-            lastStatus = "WAITING_FOR_TEST_INFO";
-        }
-        else
-        {
-            bootstrapRequested = false;
-            batterySampleAll();
-            initialTelemetryQueued = telemetryCaptureInitialAndStore(false);
-            Serial.printf(
-                "[MQTT] Initial telemetry %s\n",
-                initialTelemetryQueued ? "queued" : "failed");
-        }
-    }
-
     startClientWhenReady();
     reconnectWhenDue();
+    publishBootstrapWhenRequested();
     publishOldestQueuedBatch();
 }
 

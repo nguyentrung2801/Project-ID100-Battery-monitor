@@ -13,6 +13,8 @@ namespace
 const uint8_t BATTERY_PINS[ADC_CHANNEL_COUNT] = {
     PIN_BATTERY_1,
     PIN_BATTERY_2,
+    PIN_BATTERY_3,
+    PIN_BATTERY_4,
 };
 
 BatteryReading readings[ADC_CHANNEL_COUNT];
@@ -96,7 +98,13 @@ void batteryBegin()
         // Keeping a second hard-coded ID here causes the server to address one
         // device while command_manager validates against another.
         reading.deviceId = getDeviceId(channel);
-        reading.deviceName = channel == 0 ? "ID-100 Unit 01" : "ID-100 Unit 02";
+        char deviceName[20];
+        snprintf(
+            deviceName,
+            sizeof(deviceName),
+            "ID-100 Unit %02u",
+            channel + 1);
+        reading.deviceName = deviceName;
     }
 }
 

@@ -1,39 +1,32 @@
-GDO / SMO Fault Monitor firmware release
-=======================================
+ID100 Battery Monitor firmware release
+======================================
 
-Cac file *_merged.bin la firmware da gom san bootloader + partition + app.
-Nguoi nap firmware KHONG can VSCode va KHONG can PlatformIO.
+Recommended complete image
+--------------------------
+File: ID100_Battery_Monitor_merged.bin
+Flash address: 0x0
 
-Cach nap khuyen dung: Espressif Flash Download Tool
---------------------------------------------------
-1. Tai va mo Espressif Flash Download Tool tren Windows.
-2. Chon chip: ESP32-C3.
-3. Chon che do download/develop tuy tool hien thi.
-4. Them file can nap:
-   - JIG1_merged.bin cho JIG 1
-   - JIG2_merged.bin cho JIG 2
-   - JIG3_merged.bin cho JIG 3
-5. Dia chi flash/offset: 0x0
-6. Chon dung COM port cua ESP.
-7. Baud co the de 460800 hoac 115200 neu nap khong on dinh.
-8. Bam START/FLASH.
-9. Sau khi nap xong, reset ESP.
+This file contains the bootloader, partition table, boot_app0 and application.
+Use it for a complete installation with Espressif Flash Download Tool or:
 
-Cach nap bang command line neu da cai esptool.exe
-------------------------------------------------
-flash_jig1.bat COM3
-flash_jig2.bat COM3
-flash_jig3.bat COM3
+    flash_id100.bat COM3
 
-Neu loi khong mo duoc COM
--------------------------
-- Dong Serial Monitor / PlatformIO / UART Assistant dang giu cong COM.
-- Rut cam lai ESP.
-- Kiem tra dung cong COM trong Device Manager.
-- Neu can, giu nut BOOT khi bat dau nap, sau do tha ra khi tool bat dau ghi.
+Application-only image
+----------------------
+File: ID100_Battery_Monitor.bin
+Flash address: 0x10000
 
-Ghi chu
--------
-- Flash address cho file merged: 0x0
-- Chip target: ESP32-C3
-- Neu can xoa WiFi/log cu, trong Flash Download Tool co the tick ERASE truoc khi nap.
+Use the application-only image only when the board already has the matching
+bootloader and partition table.
+
+Target
+------
+Chip: ESP32-C3
+Flash size: 4 MB
+Flash mode: DIO
+PlatformIO environment: esp32-c3-mini
+
+Important
+---------
+Normal firmware flashing preserves NVS and LittleFS data. Erasing the whole
+flash removes saved Wi-Fi, test information, channel states and telemetry buffer.

@@ -3,11 +3,11 @@
 #include <Arduino.h>
 
 void telemetryBegin();
+bool telemetryBuildBootstrapPayload(String &payload);
 bool telemetryCaptureAndStore(
     uint8_t channelMask,
     bool isBackfill,
     uint16_t aggregationIntervalSeconds);
-bool telemetryCaptureInitialAndStore(bool isBackfill);
 bool telemetryPeekOldest(String &path, String &payload);
 void telemetryAcknowledge(const String &path);
 void telemetryMarkQueuedAsBackfill();

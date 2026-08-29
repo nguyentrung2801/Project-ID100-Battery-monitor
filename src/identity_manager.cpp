@@ -1,12 +1,14 @@
 #include "identity_manager.h"
 
+#include "config.h"
+
 #include <esp_system.h>
 
 namespace
 {
 String gatewayId;
 String bootId;
-String deviceIds[2];
+String deviceIds[ADC_CHANNEL_COUNT];
 
 String createUuid()
 {
@@ -41,8 +43,10 @@ void identityBegin()
 
     gatewayId = value;
     bootId = createUuid();
-    deviceIds[0] = gatewayId + "-CH1";
-    deviceIds[1] = gatewayId + "-CH2";
+    for (uint8_t channel = 0; channel < ADC_CHANNEL_COUNT; channel++)
+    {
+        deviceIds[channel] = gatewayId + "-CH" + String(channel + 1);
+    }
 }
 
 const String &getGatewayId()
@@ -57,5 +61,5 @@ const String &getBootId()
 
 const String &getDeviceId(uint8_t channel)
 {
-    return deviceIds[channel < 2 ? channel : 0];
+    return deviceIds[channel < ADC_CHANNEL_COUNT ? channel : 0];
 }

@@ -2,6 +2,7 @@
 
 #include "battery_manager.h"
 #include "command_manager.h"
+#include "config.h"
 #include "identity_manager.h"
 #include "mqtt_manager.h"
 #include "sampling_manager.h"
@@ -30,6 +31,8 @@ const char INDEX_HTML[] PROGMEM = R"HTML(
     :root{--bg:#06101d;--card:#0f2033;--card2:#0a1928;--line:#203d59;--text:#f1f6fc;--muted:#8fa5bc;--blue:#2397ee;--green:#4fe0a0;--red:#ff7882;--amber:#ffc968}
     *{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at top,#102944 0,#06101d 34%,#050c16 100%);color:var(--text);font:15px Inter,system-ui,Arial,sans-serif;min-height:100vh}.page{max-width:1040px;margin:auto;padding:34px 20px 54px}.header{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-bottom:24px;padding:4px}.header h1{font-size:29px;margin:0 0 7px;letter-spacing:-.6px}.sub,.muted{color:var(--muted)}.pill{padding:11px 18px;border-radius:999px;background:#132d48;border:1px solid #244866;font-weight:850;letter-spacing:.5px}.online{color:var(--green)}.offline{color:var(--red)}.grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}.card{background:linear-gradient(145deg,var(--card),#0c1a2b);border:1px solid var(--line);border-radius:20px;padding:23px;box-shadow:0 14px 35px rgba(0,0,0,.18)}.wide{grid-column:1/-1}.battery-head{display:flex;justify-content:space-between;gap:14px;align-items:flex-start}.battery-head h2{margin:0;font-size:21px;letter-spacing:.2px}.state{display:inline-block;margin-top:9px;padding:5px 10px;border-radius:999px;background:#192f48;color:var(--muted);font-size:11px;font-weight:850;letter-spacing:.7px;text-transform:uppercase}.state.running{color:var(--green);background:#123a35}.state.paused{color:var(--amber);background:#3a3220}.percent{font-size:39px;font-weight:900;color:var(--green);letter-spacing:-1px}.bar{height:9px;background:#293e54;border-radius:8px;overflow:hidden;margin:20px 0 22px}.bar span{display:block;height:100%;background:linear-gradient(90deg,var(--blue),var(--green));transition:width .4s ease}.metrics{display:grid;grid-template-columns:1fr 1fr;gap:14px}.metric{background:var(--card2);border:1px solid #1b344d;border-radius:13px;padding:13px;color:var(--muted)}.metric b{display:block;color:var(--text);font-size:18px;margin-top:5px}.title{font-size:15px;margin:0 0 18px;letter-spacing:1.2px}.form-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}label{display:block;color:var(--muted);margin-bottom:7px}input,select{width:100%;height:47px;border:1px solid #31506e;border-radius:12px;background:#081725;color:white;padding:0 14px;font:inherit;outline:none}input:focus,select:focus{border-color:var(--blue);box-shadow:0 0 0 3px rgba(35,151,238,.12)}button{height:47px;border:0;border-radius:12px;background:linear-gradient(135deg,#258fe0,#1ba6ed);color:#fff;padding:0 22px;font-weight:800;cursor:pointer}.actions{display:flex;align-items:center;gap:12px;margin-top:16px;flex-wrap:wrap}.message{color:var(--green);min-height:20px}.wifi-connection{background:var(--card2);border:1px solid #245173;border-radius:13px;padding:13px 15px;margin-bottom:8px;color:var(--green);font-weight:800}.wifi-help{color:var(--muted);font-size:13px;margin:0 0 17px}.wifi-row{display:grid;grid-template-columns:1.3fr 1fr auto;gap:12px;align-items:end}.scan-state{font-size:13px;color:var(--muted);margin-top:11px}@media(max-width:720px){.grid{grid-template-columns:1fr}.wide{grid-column:auto}.form-grid,.wifi-row{grid-template-columns:1fr}.header{align-items:flex-start}.header h1{font-size:24px}.percent{font-size:34px}.card{padding:19px}}
     .wifi-connection{background:none;border:0;border-radius:0;padding:0;margin:0 0 6px;color:var(--green);font-weight:800}
+    .password-wrap{position:relative}.password-wrap input{padding-right:48px}.password-toggle{position:absolute;right:4px;top:4px;width:39px;height:39px;padding:0;border-radius:9px;background:transparent;color:var(--muted);display:grid;place-items:center}.password-toggle:hover,.password-toggle.revealed{color:var(--text);background:#12283c}.password-toggle svg{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+    .message.error{color:var(--red)}
   </style>
 </head>
 <body>
@@ -56,7 +59,7 @@ const char INDEX_HTML[] PROGMEM = R"HTML(
         <p class="wifi-help">To configure another Wi-Fi network, select it and enter its password below.</p>
         <div class="wifi-row">
           <div><label for="ssid">Wi-Fi network</label><select id="ssid"><option>Scanning nearby networks...</option></select></div>
-          <div><label for="password">Password</label><input id="password" type="password"></div>
+          <div><label for="password">Password</label><div class="password-wrap"><input id="password" type="password"><button class="password-toggle" id="togglePassword" type="button" aria-label="Show password" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.7"/></svg></button></div></div>
           <button id="connectWifi">Connect</button>
         </div>
         <div class="scan-state" id="wifiMessage"></div>
@@ -64,6 +67,8 @@ const char INDEX_HTML[] PROGMEM = R"HTML(
 
       <article class="card" id="battery0"></article>
       <article class="card" id="battery1"></article>
+      <article class="card" id="battery2"></article>
+      <article class="card" id="battery3"></article>
     </section>
   </main>
 
@@ -104,7 +109,7 @@ const char INDEX_HTML[] PROGMEM = R"HTML(
             showWifiMessage('Connected successfully',10000);
           }else if(now>=wifiAttempt.deadline){
             wifiAttempt=null;
-            showWifiMessage('Incorrect Wi-Fi password',10000);
+            showWifiMessage('Cannot connect to Wi-Fi',10000);
           }
         }else if(wifiMessageUntil&&Date.now()>=wifiMessageUntil){
           showWifiMessage('');
@@ -125,33 +130,65 @@ const char INDEX_HTML[] PROGMEM = R"HTML(
         select.innerHTML='<option value="">Scanning nearby networks...</option>';
       }
       try{
-        const result=await fetch('/api/wifi/scan').then(response=>response.json());
+        const result=await fetch('/api/wifi/scan',{cache:'no-store'}).then(response=>response.json());
         if(result.scanning){
           clearTimeout(window.wifiScanRetryTimer);
           window.wifiScanRetryTimer=setTimeout(scanWifi,1000);
           return;
         }
         if(result.networks?.length){
+          const connectedSsid=result.connected_ssid||'';
+          result.networks.sort((left,right)=>{
+            const leftConnected=connectedSsid&&left.ssid===connectedSsid;
+            const rightConnected=connectedSsid&&right.ssid===connectedSsid;
+            if(leftConnected!==rightConnected){return leftConnected?-1:1;}
+            return Number(right.rssi)-Number(left.rssi);
+          });
           select.innerHTML=result.networks.map(network=>`<option value="${escapeHtml(network.ssid)}">${escapeHtml(network.ssid)} · ${network.rssi} dBm${network.open?' · Open':''}</option>`).join('');
           return;
         }
       }catch(error){}
-      select.innerHTML='<option value="">No networks found. Retrying...</option>';
-      clearTimeout(window.wifiScanRetryTimer);
-      window.wifiScanRetryTimer=setTimeout(scanWifi,3000);
+      select.innerHTML='<option value="">No networks found</option>';
     }
 
     byId('saveTest').onclick=async()=>{
       const gatewayName=byId('gatewayName').value.trim();
       const tester=byId('tester').value.trim();
       const location=byId('location').value.trim();
-      if(!gatewayName||!tester||!location){byId('testMessage').textContent='All test information fields are required';return;}
-      const body=new URLSearchParams({gateway_name:gatewayName,tester,location});
       const message=byId('testMessage');
-      message.textContent=await fetch('/api/config',{method:'POST',body}).then(response=>response.text());
+      clearTimeout(window.testMessageTimer);
+      if(!gatewayName||!tester||!location){
+        message.classList.add('error');
+        message.textContent='All test information fields are required';
+        return;
+      }
+      const body=new URLSearchParams({gateway_name:gatewayName,tester,location});
+      const response=await fetch('/api/config',{method:'POST',body});
+      message.classList.toggle('error',!response.ok);
+      message.textContent=await response.text();
       clearTimeout(window.testMessageTimer);
       window.testMessageTimer=setTimeout(()=>message.textContent='',10000);
     };
+
+    byId('togglePassword').onclick=()=>{
+      const input=byId('password');
+      const reveal=input.type==='password';
+      input.type=reveal?'text':'password';
+      byId('togglePassword').classList.toggle('revealed',reveal);
+      byId('togglePassword').setAttribute('aria-pressed',String(reveal));
+      byId('togglePassword').setAttribute('aria-label',reveal?'Hide password':'Show password');
+      input.focus();
+    };
+
+    byId('password').addEventListener('input',()=>{
+      const input=byId('password');
+      if(input.type==='text'){
+        input.type='password';
+        byId('togglePassword').classList.remove('revealed');
+        byId('togglePassword').setAttribute('aria-pressed','false');
+        byId('togglePassword').setAttribute('aria-label','Show password');
+      }
+    });
 
     byId('connectWifi').onclick=async()=>{
       const ssid=byId('ssid').value;
@@ -192,9 +229,13 @@ void handleStatusRequest()
     document["mqtt_connected"] = mqttIsConnected();
     document["mqtt_status"] = mqttLastStatus();
     document["mqtt_desired_topic"] = mqttDesiredTopic();
-    document["test_running"] =
-        commandChannelState(0) == ChannelState::Running ||
-        commandChannelState(1) == ChannelState::Running;
+    bool testRunning = false;
+    for (uint8_t channel = 0; channel < ADC_CHANNEL_COUNT; channel++)
+    {
+        testRunning = testRunning ||
+                      commandChannelState(channel) == ChannelState::Running;
+    }
+    document["test_running"] = testRunning;
     samplingAddStatus(document);
     sendJson(document);
 }
@@ -231,30 +272,40 @@ void handleConfigPostRequest()
 
 void handleWifiScanRequest()
 {
-    static bool reconnectPausedForScan = false;
+    static uint8_t scanAttempt = 0;
+    static unsigned long scanStartedMillis = 0;
     JsonDocument document;
     JsonArray networks = document["networks"].to<JsonArray>();
-    const int resultCount = WiFi.scanComplete();
+    if (WiFi.status() == WL_CONNECTED)
+    {
+        document["connected_ssid"] = WiFi.SSID();
+    }
+    int resultCount = WiFi.scanComplete();
+
+    if (resultCount == WIFI_SCAN_RUNNING &&
+        millis() - scanStartedMillis >= WIFI_SCAN_TIMEOUT_MS)
+    {
+        Serial.println("[WiFi] Scan timeout, restarting scan");
+        WiFi.scanDelete();
+        resultCount = WIFI_SCAN_FAILED;
+    }
 
     if (resultCount == WIFI_SCAN_FAILED)
     {
-        if (WiFi.status() != WL_CONNECTED)
+        // A pending connection to an unavailable saved router can monopolize
+        // the single ESP32-C3 radio. Stop STA association only; AP stays up.
+        if (WiFi.status() != WL_CONNECTED && WiFi.softAPgetStationNum() > 0)
         {
-            WiFi.setAutoReconnect(false);
             WiFi.disconnect(false, false);
-            reconnectPausedForScan = true;
-            delay(20);
+            delay(30);
         }
 
+        scanAttempt = max<uint8_t>(scanAttempt, 1);
         const int scanStartResult = WiFi.scanNetworks(true, true);
+        scanStartedMillis = millis();
         document["scanning"] = scanStartResult == WIFI_SCAN_RUNNING;
         document["scan_status"] = scanStartResult;
-        if (scanStartResult != WIFI_SCAN_RUNNING && reconnectPausedForScan)
-        {
-            reconnectPausedForScan = false;
-            WiFi.setAutoReconnect(true);
-            WiFi.reconnect();
-        }
+        document["attempt"] = scanAttempt;
         sendJson(document);
         return;
     }
@@ -262,12 +313,28 @@ void handleWifiScanRequest()
     if (resultCount == WIFI_SCAN_RUNNING)
     {
         document["scanning"] = true;
+        document["attempt"] = scanAttempt;
+        sendJson(document);
+        return;
+    }
+
+    if (resultCount == 0 && scanAttempt < WIFI_SCAN_MAX_ATTEMPTS)
+    {
+        scanAttempt++;
+        WiFi.scanDelete();
+        delay(30);
+        const int scanStartResult = WiFi.scanNetworks(true, true);
+        scanStartedMillis = millis();
+        document["scanning"] = scanStartResult == WIFI_SCAN_RUNNING;
+        document["scan_status"] = scanStartResult;
+        document["attempt"] = scanAttempt;
         sendJson(document);
         return;
     }
 
     document["scanning"] = false;
     document["scan_status"] = resultCount;
+    document["attempt"] = scanAttempt;
 
     for (int index = 0; index < resultCount && index < MAX_WIFI_NETWORKS; index++)
     {
@@ -278,13 +345,8 @@ void handleWifiScanRequest()
     }
 
     WiFi.scanDelete();
-
-    if (reconnectPausedForScan)
-    {
-        reconnectPausedForScan = false;
-        WiFi.setAutoReconnect(true);
-        WiFi.reconnect();
-    }
+    scanAttempt = 0;
+    scanStartedMillis = 0;
 
     sendJson(document);
 }

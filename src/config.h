@@ -8,22 +8,30 @@
 // Local access point
 #define AP_SSID "ID100-Battery-Monitor"
 #define AP_PASSWORD "12345678"
+#define AP_CHANNEL 1
+#define AP_MAX_CONNECTIONS 4
+#define AP_HEALTH_CHECK_MS 5000UL
+#define STA_BACKGROUND_RETRY_MS 60000UL
+#define WIFI_SCAN_TIMEOUT_MS 15000UL
+#define WIFI_SCAN_MAX_ATTEMPTS 3
 
 // ADC channels and sampling
-#define ADC_CHANNEL_COUNT 2
+#define ADC_CHANNEL_COUNT 4
 #define ADC_SAMPLES 32
 #define ADC_SAMPLE_DELAY_US 150
 #define ADC_SAMPLE_INTERVAL_MS 1000UL
 #define SAMPLES_PER_MINUTE 60
 #define MINUTE_AVERAGES_PER_TELEMETRY 10
-#define PIN_BATTERY_1 3
-#define PIN_BATTERY_2 4
+#define PIN_BATTERY_1 1
+#define PIN_BATTERY_2 2
+#define PIN_BATTERY_3 3
+#define PIN_BATTERY_4 4
 
 // Battery conversion and thresholds
 // Common linear calibration from the averaged GPIO3/GPIO4 sweep.
 // battery_mV = adc_mV * slope + offset_mV
-#define ADC_CAL_SLOPE 5.98030284811045
-#define ADC_CAL_OFFSET_MV -41.9597893112993
+#define ADC_CAL_SLOPE 6.11788007744669
+#define ADC_CAL_OFFSET_MV 26.958024845082
 #define BATTERY_EMPTY_MV 2400
 #define BATTERY_LOW_MV 2500
 #define BATTERY_NORMAL_MV 2500

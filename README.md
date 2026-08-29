@@ -6,8 +6,10 @@ Firmware đo đồng thời hai pin ID100, hiển thị Web App qua WiFi AP, k�
 
 | Kênh | Thiết bị | Chân ADC |
 |---|---|---|
-| 1 | ID100-001 | GPIO3 |
-| 2 | ID100-002 | GPIO4 |
+| 1 | ID100-001 | GPIO1 |
+| 2 | ID100-002 | GPIO2 |
+| 3 | ID100-003 | GPIO3 |
+| 4 | ID100-004 | GPIO4 |
 
 Mỗi đầu vào phải đi qua mạch chia áp; không đưa điện áp pin vượt giới hạn ADC trực tiếp vào ESP32. Firmware mặc định dùng hệ số `1.500` trong `src/config.h`, tương ứng ví dụ ADC 2198 mV thành điện áp pin 3297 mV. Hai mạch phải chung GND với ESP32.
 

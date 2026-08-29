@@ -14,15 +14,50 @@
 
 namespace
 {
+const IPAddress accessPointIp(4, 4, 4, 4);
+const IPAddress subnetMask(255, 255, 255, 0);
+unsigned long lastAccessPointCheckMillis = 0;
+
 void startAccessPoint()
 {
-    const IPAddress accessPointIp(4, 4, 4, 4);
-    const IPAddress subnetMask(255, 255, 255, 0);
-
     WiFi.mode(WIFI_AP_STA);
-    WiFi.setAutoReconnect(true);
+    WiFi.persistent(false);
+    WiFi.setSleep(false);
+    // AP stability has priority. STA reconnects are scheduled explicitly and
+    // never while a phone is connected to the configuration AP.
+    WiFi.setAutoReconnect(false);
     WiFi.softAPConfig(accessPointIp, accessPointIp, subnetMask);
-    WiFi.softAP(AP_SSID, AP_PASSWORD);
+    const bool started = WiFi.softAP(
+        AP_SSID,
+        AP_PASSWORD,
+        AP_CHANNEL,
+        false,
+        AP_MAX_CONNECTIONS);
+    Serial.printf(
+        "[WiFi] AP %s, IP=%s\n",
+        started ? "started" : "start failed",
+        WiFi.softAPIP().toString().c_str());
+}
+
+void keepAccessPointAlive()
+{
+    const unsigned long now = millis();
+    if (now - lastAccessPointCheckMillis < AP_HEALTH_CHECK_MS)
+    {
+        return;
+    }
+    lastAccessPointCheckMillis = now;
+
+    const wifi_mode_t mode = WiFi.getMode();
+    const bool apModeEnabled = mode == WIFI_AP || mode == WIFI_AP_STA;
+    if (apModeEnabled && WiFi.softAPIP() == accessPointIp)
+    {
+        return;
+    }
+
+    Serial.println("[WiFi] AP health check failed, restarting AP");
+    WiFi.softAPdisconnect(false);
+    startAccessPoint();
 }
 
 } // namespace
@@ -52,6 +87,8 @@ void setup()
 
 void loop()
 {
+    keepAccessPointAlive();
+    maintainSavedWifi();
     samplingLoop();
     handleAPWebClient();
     mqttLoop();

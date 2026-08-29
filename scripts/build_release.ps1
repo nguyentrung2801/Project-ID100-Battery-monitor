@@ -1,5 +1,5 @@
 param(
-    [string[]]$Envs = @("jig1", "jig2", "jig3"),
+    [string]$Environment = "esp32-c3-mini",
     [switch]$SkipBuild
 )
 
@@ -7,121 +7,113 @@ $ErrorActionPreference = "Stop"
 
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $releaseDir = Join-Path $projectRoot "release"
-New-Item -ItemType Directory -Force -Path $releaseDir | Out-Null
+$buildDir = Join-Path $projectRoot ".pio\build\$Environment"
 
 $pio = Join-Path $env:USERPROFILE ".platformio\penv\Scripts\pio.exe"
 $python = Join-Path $env:USERPROFILE ".platformio\penv\Scripts\python.exe"
 $esptool = Join-Path $env:USERPROFILE ".platformio\packages\tool-esptoolpy\esptool.py"
 $bootApp0 = Join-Path $env:USERPROFILE ".platformio\packages\framework-arduinoespressif32\tools\partitions\boot_app0.bin"
 
-if (!(Test-Path $pio)) { throw "PlatformIO pio.exe not found: $pio" }
-if (!(Test-Path $python)) { throw "PlatformIO python.exe not found: $python" }
-if (!(Test-Path $esptool)) { throw "esptool.py not found: $esptool" }
-if (!(Test-Path $bootApp0)) { throw "boot_app0.bin not found: $bootApp0" }
-
-function Get-JigLabel([string]$envName) {
-    switch ($envName) {
-        "jig1" { return "JIG1" }
-        "jig2" { return "JIG2" }
-        "jig3" { return "JIG3" }
-        default { return $envName.ToUpperInvariant() }
+foreach ($tool in @($pio, $python, $esptool, $bootApp0)) {
+    if (!(Test-Path -LiteralPath $tool)) {
+        throw "Required build tool was not found: $tool"
     }
 }
 
-foreach ($envName in $Envs) {
-    Write-Host "==== Building $envName ====" -ForegroundColor Cyan
-
-    if (!$SkipBuild) {
-        & $pio run -e $envName -j1
-        if ($LASTEXITCODE -ne 0) { throw "Build failed for $envName" }
+if (!$SkipBuild) {
+    Write-Host "Building ID100 Battery Monitor ($Environment)..." -ForegroundColor Cyan
+    & $pio run -e $Environment
+    if ($LASTEXITCODE -ne 0) {
+        throw "PlatformIO build failed for environment: $Environment"
     }
+}
 
-    $buildDir = Join-Path $projectRoot ".pio\build\$envName"
-    $bootloader = Join-Path $buildDir "bootloader.bin"
-    $partitions = Join-Path $buildDir "partitions.bin"
-    $firmware = Join-Path $buildDir "firmware.bin"
+$bootloader = Join-Path $buildDir "bootloader.bin"
+$partitions = Join-Path $buildDir "partitions.bin"
+$firmware = Join-Path $buildDir "firmware.bin"
 
-    foreach ($file in @($bootloader, $partitions, $firmware)) {
-        if (!(Test-Path $file)) { throw "Missing build output: $file" }
+foreach ($file in @($bootloader, $partitions, $firmware)) {
+    if (!(Test-Path -LiteralPath $file)) {
+        throw "Missing build output: $file"
     }
+}
 
-    $label = Get-JigLabel $envName
-    $merged = Join-Path $releaseDir "$label`_merged.bin"
+New-Item -ItemType Directory -Force -Path $releaseDir | Out-Null
 
-    Write-Host "==== Merging $label firmware ====" -ForegroundColor Cyan
-    & $python $esptool --chip esp32c3 merge_bin `
-        -o $merged `
-        --flash_mode dio `
-        --flash_freq 80m `
-        --flash_size 4MB `
-        0x0 $bootloader `
-        0x8000 $partitions `
-        0xe000 $bootApp0 `
-        0x10000 $firmware
+$appOutput = Join-Path $releaseDir "ID100_Battery_Monitor.bin"
+$mergedOutput = Join-Path $releaseDir "ID100_Battery_Monitor_merged.bin"
+Copy-Item -LiteralPath $firmware -Destination $appOutput -Force
 
-    if ($LASTEXITCODE -ne 0) { throw "Merge failed for $envName" }
+Write-Host "Creating merged ESP32-C3 image..." -ForegroundColor Cyan
+& $python $esptool --chip esp32c3 merge_bin `
+    -o $mergedOutput `
+    --flash_mode dio `
+    --flash_freq 80m `
+    --flash_size 4MB `
+    0x0 $bootloader `
+    0x8000 $partitions `
+    0xe000 $bootApp0 `
+    0x10000 $firmware
 
-    $flashBat = Join-Path $releaseDir "flash_$($label.ToLowerInvariant()).bat"
-    @"
+if ($LASTEXITCODE -ne 0) {
+    throw "Failed to create merged firmware image"
+}
+
+$flashScript = Join-Path $releaseDir "flash_id100.bat"
+@"
 @echo off
 set PORT=%~1
-if "%PORT%"=="" set /p PORT=Nhap cong COM, vi du COM3: 
+if "%PORT%"=="" set /p PORT=Enter COM port, for example COM3: 
 if "%PORT%"=="" exit /b 1
 
 where esptool.exe >nul 2>nul
 if errorlevel 1 (
-  echo Khong tim thay esptool.exe trong PATH.
-  echo Cach de hon: dung Espressif Flash Download Tool va chon file $label`_merged.bin tai dia chi 0x0.
+  echo esptool.exe was not found in PATH.
+  echo Use Espressif Flash Download Tool and flash ID100_Battery_Monitor_merged.bin at 0x0.
   pause
   exit /b 1
 )
 
-esptool.exe --chip esp32c3 --port %PORT% --baud 460800 write_flash 0x0 "%~dp0$label`_merged.bin"
+esptool.exe --chip esp32c3 --port %PORT% --baud 460800 write_flash 0x0 "%~dp0ID100_Battery_Monitor_merged.bin"
 pause
-"@ | Set-Content -Path $flashBat -Encoding ASCII
-}
+"@ | Set-Content -Path $flashScript -Encoding ASCII
 
 $readme = Join-Path $releaseDir "README_FLASH.txt"
 @"
-GDO / SMO Fault Monitor firmware release
-=======================================
+ID100 Battery Monitor firmware release
+======================================
 
-Cac file *_merged.bin la firmware da gom san bootloader + partition + app.
-Nguoi nap firmware KHONG can VSCode va KHONG can PlatformIO.
+Recommended complete image
+--------------------------
+File: ID100_Battery_Monitor_merged.bin
+Flash address: 0x0
 
-Cach nap khuyen dung: Espressif Flash Download Tool
---------------------------------------------------
-1. Tai va mo Espressif Flash Download Tool tren Windows.
-2. Chon chip: ESP32-C3.
-3. Chon che do download/develop tuy tool hien thi.
-4. Them file can nap:
-   - JIG1_merged.bin cho JIG 1
-   - JIG2_merged.bin cho JIG 2
-   - JIG3_merged.bin cho JIG 3
-5. Dia chi flash/offset: 0x0
-6. Chon dung COM port cua ESP.
-7. Baud co the de 460800 hoac 115200 neu nap khong on dinh.
-8. Bam START/FLASH.
-9. Sau khi nap xong, reset ESP.
+This file contains the bootloader, partition table, boot_app0 and application.
+Use it for a complete installation with Espressif Flash Download Tool or:
 
-Cach nap bang command line neu da cai esptool.exe
-------------------------------------------------
-flash_jig1.bat COM3
-flash_jig2.bat COM3
-flash_jig3.bat COM3
+    flash_id100.bat COM3
 
-Neu loi khong mo duoc COM
--------------------------
-- Dong Serial Monitor / PlatformIO / UART Assistant dang giu cong COM.
-- Rut cam lai ESP.
-- Kiem tra dung cong COM trong Device Manager.
-- Neu can, giu nut BOOT khi bat dau nap, sau do tha ra khi tool bat dau ghi.
+Application-only image
+----------------------
+File: ID100_Battery_Monitor.bin
+Flash address: 0x10000
 
-Ghi chu
--------
-- Flash address cho file merged: 0x0
-- Chip target: ESP32-C3
-- Neu can xoa WiFi/log cu, trong Flash Download Tool co the tick ERASE truoc khi nap.
+Use the application-only image only when the board already has the matching
+bootloader and partition table.
+
+Target
+------
+Chip: ESP32-C3
+Flash size: 4 MB
+Flash mode: DIO
+PlatformIO environment: $Environment
+
+Important
+---------
+Normal firmware flashing preserves NVS and LittleFS data. Erasing the whole
+flash removes saved Wi-Fi, test information, channel states and telemetry buffer.
 "@ | Set-Content -Path $readme -Encoding ASCII
 
-Write-Host "Release package created at: $releaseDir" -ForegroundColor Green
+Write-Host "Release created successfully:" -ForegroundColor Green
+Write-Host "  $appOutput"
+Write-Host "  $mergedOutput"
