@@ -1,36 +1,37 @@
-# ID100 Battery Monitor
+﻿# ID100 Battery Monitor
 
-Firmware giám sát điện áp pin ID100 bằng ESP32-C3, hỗ trợ 4 kênh ADC, cấu hình
-qua Web AP và trao đổi dữ liệu với server bằng MQTT qua TLS.
+ESP32-C3 firmware for monitoring ID100 battery voltage, with four ADC channels,
+configuration through a local Web AP, and server communication over MQTT with TLS.
 
-Hệ thống thực hiện hai nhiệm vụ chính:
+The system performs two main tasks:
 
-- Đo và hiển thị tức thời 4 kênh trên Web AP cục bộ.
-- Khi server cho một kênh chạy test, lấy mẫu mỗi giây, tính trung bình 10 phút
-  và gửi telemetry lên MQTT với QoS 1.
+- Measure and display all four channels in real time on the local Web AP.
+- When the server starts a test on a channel, sample every second, calculate
+  10-minute averages, and publish telemetry over MQTT with QoS 1.
 
-Nếu mất Wi-Fi hoặc MQTT, các kênh đang `running` vẫn tiếp tục đo. Telemetry hoàn
-chỉnh chưa gửi được được lưu trong LittleFS và gửi bù khi kết nối trở lại.
+If Wi-Fi or MQTT disconnects, channels in the `running` state continue measuring.
+Completed telemetry that cannot be delivered is stored in LittleFS and sent as
+backfill when the connection is restored.
 
-## Phần cứng
+## Hardware
 
-| Kênh | Chân ADC | Tên mặc định |
+| Channel | ADC pin | Default name |
 |---|---:|---|
 | CH1 | GPIO1 | ID-100 Unit 01 |
 | CH2 | GPIO2 | ID-100 Unit 02 |
 | CH3 | GPIO3 | ID-100 Unit 03 |
 | CH4 | GPIO4 | ID-100 Unit 04 |
 
-Đầu vào phải đi qua mạch chia áp phù hợp và dùng chung GND với ESP32-C3. Không
-đưa điện áp vượt giới hạn ADC trực tiếp vào GPIO.
+Inputs must use a suitable voltage divider and share GND with the ESP32-C3. Do not
+apply voltages above the ADC input limit directly to a GPIO pin.
 
-## Cách đo pin
+## Battery Measurement
 
-### Đọc ADC
+### ADC Readings
 
-Mỗi lần đo một kênh, firmware thực hiện 32 lần `analogRead()` và
-`analogReadMilliVolts()`, cách nhau 150 micro giây, rồi lấy trung bình. ADC dùng
-độ phân giải 12 bit và attenuation `ADC_11db`.
+For each channel measurement, the firmware performs 32 iterations of
+`analogRead()` and `analogReadMilliVolts()`, spaced 150 microseconds apart, then
+averages the readings. The ADC uses 12-bit resolution and `ADC_11db` attenuation.
 
 ```cpp
 #define ADC_SAMPLES 32
@@ -38,62 +39,64 @@ Mỗi lần đo một kênh, firmware thực hiện 32 lần `analogRead()` và
 #define ADC_SAMPLE_INTERVAL_MS 1000UL
 ```
 
-### Quy đổi điện áp
+### Voltage Conversion
 
-Với mạch điện trở 5,6 MΩ và 1,1 MΩ, điện áp pin được hiệu chuẩn theo:
+For the voltage divider using 5.6 MΩ and 1.1 MΩ resistors, battery voltage is
+calibrated using:
 
 ```text
 battery_voltage_mv = adc_voltage_mv × 6.11788007744669
                      + 26.958024845082
 ```
 
-Phần trăm pin được nội suy tuyến tính từ 2.400 mV (0%) đến 3.300 mV (100%) và
-giới hạn trong khoảng 0–100%.
+Battery percentage is linearly interpolated from 2,400 mV (0%) to 3,300 mV (100%)
+and clamped to the range 0–100%.
 
-| Điện áp pin | Trạng thái Web AP |
+| Battery voltage | Web AP status |
 |---:|---|
-| Dưới 500 mV | `not_connected` |
-| 500–2.400 mV | `empty` |
-| Trên 2.400 và dưới 2.500 mV | `low` |
-| 2.500 đến dưới 3.300 mV | `normal` |
-| 3.300 đến 3.450 mV | `full` |
-| Trên 3.450 mV | `over_voltage` |
+| Below 500 mV | `not_connected` |
+| 500–2,400 mV | `empty` |
+| Above 2,400 and below 2,500 mV | `low` |
+| 2,500 to below 3,300 mV | `normal` |
+| 3,300 to 3,450 mV | `full` |
+| Above 3,450 mV | `over_voltage` |
 
-`battery_status` không được gửi trong telemetry; server tự đánh giá pin từ dữ
-liệu điện áp hoặc phần trăm.
+`battery_status` is not included in telemetry; the server evaluates battery status
+from the voltage or percentage data.
 
-## Lấy mẫu và trung bình 10 phút
+## Sampling and 10-Minute Averages
 
-Mỗi kênh có trạng thái độc lập: `idle`, `running` hoặc `paused`.
+Each channel has an independent state: `idle`, `running`, or `paused`.
 
-Khi kênh `running`:
+While a channel is `running`:
 
-1. Mỗi giây tạo một mẫu đã trung bình từ 32 lần đọc ADC.
-2. Cộng dồn 60 mẫu để tạo trung bình một phút.
-3. Cộng dồn 10 kết quả một phút để tạo trung bình 10 phút.
-4. Ghi telemetry vào LittleFS trước khi thử gửi MQTT.
-5. Chỉ xóa file sau khi broker trả PUBACK.
+1. Produce one sample every second by averaging 32 ADC readings.
+2. Accumulate 60 samples to produce a one-minute average.
+3. Accumulate 10 one-minute results to produce a 10-minute average.
+4. Write telemetry to LittleFS before attempting to publish it over MQTT.
+5. Delete the file only after the broker returns PUBACK.
 
-Firmware chỉ giữ tổng và bộ đếm trong RAM, không lưu mảng 600 mẫu. Lượng RAM cho
-phép tính trung bình vì vậy không tăng theo thời gian.
+The firmware keeps only sums and counters in RAM, rather than an array of 600
+samples. RAM usage for averaging therefore does not grow over time.
 
-Ngay sau lệnh `start`, firmware đo và tạo telemetry đầu tiên với chu kỳ tổng hợp
-1 giây. Mẫu đó vẫn được cộng vào phút đầu tiên.
+Immediately after a `start` command, the firmware takes a measurement and creates
+the first telemetry record with a one-second aggregation period. That sample also
+contributes to the first one-minute average.
 
-Khi `idle` hoặc `paused`, ADC vẫn được đọc mỗi giây để Web AP hiển thị tức thời,
-nhưng không cộng vào trung bình và không gửi server. `pause` giữ phần tổng đang
-tính; `resume` tiếp tục lấy đủ số mẫu còn thiếu, không tính thời gian bị pause.
-`stop` xóa phần trung bình chưa hoàn thành trong RAM.
+While `idle` or `paused`, the ADC is still read every second for the Web AP's live
+display, but readings do not contribute to averages and are not sent to the server.
+`pause` preserves the accumulated sums; `resume` collects the remaining samples,
+excluding time spent paused. `stop` clears the incomplete averages held in RAM.
 
-## Nhận dạng thiết bị
+## Device Identity
 
-`gateway_id` được tạo ổn định từ MAC Wi-Fi STA:
+A stable `gateway_id` is generated from the Wi-Fi STA MAC address:
 
 ```text
-GW-{12 ký tự MAC viết hoa}
+GW-{12 uppercase MAC characters}
 ```
 
-Ví dụ:
+Example:
 
 ```text
 Gateway: GW-80B54E1FDF14
@@ -103,13 +106,14 @@ CH3:     GW-80B54E1FDF14-CH3
 CH4:     GW-80B54E1FDF14-CH4
 ```
 
-`boot_id` là UUID mới sau mỗi lần khởi động. Trạng thái, `session_id` và
-`sequence_no` của từng kênh được lưu trong NVS và được khôi phục sau reset/mất
-nguồn. Sequence tăng độc lập trên từng kênh nên CH1–CH4 không bắt buộc giống nhau.
+A new `boot_id` UUID is generated on every boot. Each channel's state, `session_id`,
+and `sequence_no` are stored in NVS and restored after a reset or power loss.
+Sequence numbers increment independently for each channel, so CH1–CH4 do not need
+to have matching values.
 
 ## Web AP
 
-ESP luôn phát mạng cấu hình:
+The ESP always broadcasts a configuration network:
 
 ```text
 SSID:     ID100-Battery-Monitor
@@ -117,58 +121,61 @@ Password: 12345678
 Web:      http://4.4.4.4
 ```
 
-AP chạy cùng kết nối router bằng `WIFI_AP_STA`. Wi-Fi sleep bị tắt; firmware kiểm
-tra AP mỗi 5 giây và khởi động lại AP nếu cần.
+The AP runs alongside the router connection using `WIFI_AP_STA`. Wi-Fi sleep is
+disabled; the firmware checks the AP every five seconds and restarts it if needed.
 
-Web AP cho phép:
+The Web AP lets you:
 
-- Nhập `Gateway name`, `Tester name`, `Test location`.
-- Quét/chọn Wi-Fi router và nhập mật khẩu.
-- Xem SSID đang kết nối, IP và RSSI.
-- Xem MQTT, trạng thái kênh, ADC raw, ADC mV, điện áp và phần trăm pin.
+- Enter `Gateway name`, `Tester name`, and `Test location`.
+- Scan for and select a Wi-Fi router, then enter its password.
+- View the connected SSID, IP address, and RSSI.
+- View MQTT status, channel states, raw ADC readings, ADC voltage in mV, battery
+  voltage, and battery percentage.
 
-Cả ba trường Test Information đều bắt buộc trước khi `start`. Thông tin test và
-Wi-Fi được lưu trong NVS. Khi có điện thoại đang dùng AP, firmware không tự thử
-lại router để ưu tiên độ ổn định AP; khi không có client AP, STA thử lại Wi-Fi đã
-lưu sau mỗi 60 giây.
+All three Test Information fields are required before `start`. Test information
+and Wi-Fi settings are stored in NVS. While a phone is connected to the AP, the
+firmware does not automatically retry the router connection, to keep the AP
+stable. When no AP clients are connected, the STA retries the saved Wi-Fi network
+every 60 seconds.
 
 ## MQTT
 
-| Thuộc tính | Giá trị |
+| Property | Value |
 |---|---|
 | Protocol | MQTT 3.1.1 |
 | Transport | TLS, port 8883 |
 | Client ID | `gateway_id` |
 | QoS | 1 |
-| Keep Alive | 30 giây |
-| Clean session | Tắt |
-| Reconnect | Firmware tự quản lý, 1–30 giây |
+| Keep Alive | 30 seconds |
+| Clean session | Disabled |
+| Reconnect | Managed by the firmware, 1–30 seconds |
 
-Thông tin broker, username, password và CA certificate nằm trong `src/config.h`.
-Không nên đưa credential production lên repository public; nên chuyển chúng sang
-secret build-time hoặc file cấu hình không được Git theo dõi trước khi công khai.
+The broker settings, username, password, and CA certificate are in `src/config.h`.
+Production credentials should not be committed to a public repository; move them
+to build-time secrets or a configuration file excluded from Git before publishing.
 
 ### Topics
 
-| Chức năng | Topic |
+| Purpose | Topic |
 |---|---|
 | Gateway status | `id100/{gateway_id}/status` |
 | Telemetry | `id100/{gateway_id}/telemetry` |
 | Server command | `id100/{gateway_id}/+/desired` |
 | Command ACK | `id100/{gateway_id}/{device_id}/ack` |
 
-### Luồng kết nối
+### Connection Flow
 
-1. ESP kết nối Wi-Fi router và đồng bộ NTP.
-2. MQTT kết nối TLS và subscribe `desired` với QoS 1.
-3. Sau SUBACK, ESP publish `online`, QoS 1, retain `true`.
-4. ESP đo và publish bootstrap telemetry gồm đủ CH1–CH4, kể cả kênh idle.
-5. Sau PUBACK bootstrap, ESP mới gửi lần lượt telemetry đang chờ.
+1. The ESP connects to the Wi-Fi router and synchronizes time via NTP.
+2. MQTT connects over TLS and subscribes to `desired` with QoS 1.
+3. After SUBACK, the ESP publishes `online` with QoS 1 and retain set to `true`.
+4. The ESP measures and publishes bootstrap telemetry for all channels CH1–CH4,
+   including idle channels.
+5. Only after the bootstrap PUBACK does the ESP send queued telemetry in order.
 
-Bootstrap giúp server nhận diện gateway và toàn bộ 4 kênh sau khi khởi động. Nó
-chỉ được tạo khi Test Information đã đầy đủ.
+Bootstrap telemetry lets the server identify the gateway and all four channels
+after startup. It is created only when Test Information is complete.
 
-Payload online:
+Online payload:
 
 ```json
 {
@@ -178,17 +185,17 @@ Payload online:
   "status": "online",
   "gateway_name": "Skylink test 01",
   "firmware_version": "0.1.0-demo",
-  "boot_id": "uuid-cua-lan-khoi-dong"
+  "boot_id": "current-boot-uuid"
 }
 ```
 
 ## Last Will
 
-Last Will được cấu hình trước khi connect:
+The Last Will is configured before connecting:
 
-- Topic `id100/{gateway_id}/status`.
-- QoS 1, retain `true`.
-- Keep Alive 30 giây.
+- Topic: `id100/{gateway_id}/status`.
+- QoS 1, retain set to `true`.
+- Keep Alive: 30 seconds.
 
 ```json
 {
@@ -200,20 +207,21 @@ Last Will được cấu hình trước khi connect:
 }
 ```
 
-Nếu ESP mất nguồn/mạng mà không disconnect đúng quy trình, broker phát Last Will.
-Thời gian nhận offline phụ thuộc broker và mạng, không nhất thiết chính xác đúng
-30 giây. Khi kết nối lại, online retained ghi đè offline retained.
+If the ESP loses power or network connectivity without disconnecting cleanly, the
+broker publishes the Last Will. Offline notification timing depends on the broker
+and network and is not necessarily exactly 30 seconds. On reconnection, the
+retained online message replaces the retained offline message.
 
-## Command và ACK
+## Commands and ACKs
 
-| Action | desired_state | Điều kiện |
+| Action | desired_state | Condition |
 |---|---|---|
-| `start` | `running` | Kênh idle và Test Information đầy đủ |
-| `pause` | `paused` | Kênh running |
-| `resume` | `running` | Kênh paused và đúng `session_id` |
-| `stop` | `stopped` | Chuyển về idle |
+| `start` | `running` | Channel is idle and Test Information is complete |
+| `pause` | `paused` | Channel is running |
+| `resume` | `running` | Channel is paused and `session_id` matches |
+| `stop` | `stopped` | Returns the channel to idle |
 
-Ví dụ start CH1:
+Example: start CH1:
 
 ```json
 {
@@ -229,15 +237,15 @@ Ví dụ start CH1:
 }
 ```
 
-ACK thành công có `result: "ok"`. ACK lỗi có `result: "error"`, `error_code`
-và `error_message`. Các lỗi gồm `INVALID_COMMAND_ID`, `INVALID_TYPE`,
-`INVALID_GATEWAY`, `INVALID_DEVICE`, `CONFIG_REQUIRED`, `INVALID_STATE`,
-`INVALID_SESSION` và `INVALID_ACTION`.
+A successful ACK contains `result: "ok"`. An error ACK contains `result: "error"`,
+`error_code`, and `error_message`. Error codes include `INVALID_COMMAND_ID`,
+`INVALID_TYPE`, `INVALID_GATEWAY`, `INVALID_DEVICE`, `CONFIG_REQUIRED`,
+`INVALID_STATE`, `INVALID_SESSION`, and `INVALID_ACTION`.
 
-Firmware cache 10 ACK gần nhất. Nếu server gửi lại cùng `command_id`, ESP trả ACK
-đã cache và không thực hiện action lần thứ hai.
+The firmware caches the 10 most recent ACKs. If the server resends the same
+`command_id`, the ESP returns the cached ACK without executing the action again.
 
-## Telemetry payload
+## Telemetry Payload
 
 ```json
 {
@@ -246,7 +254,7 @@ Firmware cache 10 ACK gần nhất. Nếu server gửi lại cùng `command_id`,
   "gateway_id": "GW-80B54E1FDF14",
   "gateway_name": "Skylink test 01",
   "firmware_version": "0.1.0-demo",
-  "boot_id": "uuid-cua-lan-khoi-dong",
+  "boot_id": "current-boot-uuid",
   "tester_name": "Skylink_Tomn",
   "test_location": "ID-100 Test Lab",
   "measurements": [
@@ -267,46 +275,48 @@ Firmware cache 10 ACK gần nhất. Nếu server gửi lại cùng `command_id`,
 }
 ```
 
-Một batch có thể chứa một hoặc nhiều measurement. Payload không có `label` và
-không có `battery_status`.
+A batch can contain one or more measurements. The payload includes neither `label`
+nor `battery_status`.
 
-## Offline buffer và backfill
+## Offline Buffer and Backfill
 
-Mỗi telemetry được ghi LittleFS trước khi publish:
+Each telemetry record is written to LittleFS before publishing:
 
 ```text
-Tạo telemetry → ghi LittleFS → publish QoS 1 → PUBACK → xóa file
+Create telemetry → write to LittleFS → publish with QoS 1 → PUBACK → delete file
 ```
 
-Khi mất mạng, file vẫn còn và measurement được đánh dấu `is_backfill: true`.
-Sau reconnect, ESP gửi từ cũ tới mới. Hàng đợi chỉ được đẩy khi có ít nhất một
-kênh `running`.
+When the network is unavailable, files are retained and measurements are marked
+with `is_backfill: true`. After reconnection, the ESP sends records from oldest to
+newest. The queue is drained only while at least one channel is `running`.
 
-Trong 3 giờ đầu offline, firmware giữ bản ghi 10 phút. Từ 3 giờ trở đi, mỗi 6 bản
-ghi 10 phút có cùng tập kênh được gộp thành một bản trung bình 1 giờ. Việc kiểm
-tra nén diễn ra mỗi 60 giây. Metadata nén chỉ dùng nội bộ và bị xóa trước khi gửi,
-do đó schema server không thay đổi.
+During the first three hours offline, the firmware keeps 10-minute records. From
+three hours onward, every six 10-minute records with the same set of channels are
+merged into a one-hour average record. The firmware checks for compaction every
+60 seconds. Compaction metadata is used internally and removed before sending,
+so the server schema remains unchanged.
 
-Hàng đợi giới hạn 200 file; vượt giới hạn sẽ xóa file cũ nhất. Lệnh `stop` xóa
-measurement chưa gửi của đúng `device_id`, còn dữ liệu kênh khác trong cùng file
-được giữ lại.
+The queue is limited to 200 files; exceeding this limit deletes the oldest file.
+The `stop` command removes unsent measurements for the specified `device_id`,
+while preserving other channels' data in the same file.
 
-LittleFS tồn tại qua reset/mất nguồn, nhưng tổng chưa đủ thành telemetry 10 phút
-chỉ ở RAM và sẽ mất khi mất nguồn. Nạp firmware thông thường giữ NVS/LittleFS;
-erase toàn bộ flash sẽ xóa Wi-Fi, Test Information, trạng thái và telemetry chờ.
+LittleFS survives resets and power loss, but incomplete sums that have not yet
+formed a 10-minute telemetry record exist only in RAM and are lost when power is
+removed. Normal firmware uploads preserve NVS and LittleFS; a full flash erase
+removes Wi-Fi settings, Test Information, channel states, and queued telemetry.
 
-## Cấu trúc source
+## Source Structure
 
-| File | Chức năng |
+| File | Purpose |
 |---|---|
-| `src/main.cpp` | Khởi tạo và vòng lặp chính |
-| `src/config.h` | GPIO, ADC, ngưỡng pin, MQTT và timing |
-| `src/battery_manager.*` | Đọc ADC và quy đổi dữ liệu pin |
-| `src/sampling_manager.*` | Lấy mẫu và trung bình 1/10 phút |
-| `src/identity_manager.*` | Gateway ID, device ID và boot ID |
-| `src/settings_manager.*` | NVS cho test, Wi-Fi và MQTT |
-| `src/command_manager.*` | State machine, validation và ACK |
-| `src/telemetry_manager.*` | Payload, LittleFS queue và backfill |
-| `src/mqtt_manager.*` | TLS MQTT, Last Will, reconnect, PUBACK |
-| `src/ap_web_manager.*` | Web AP và API cấu hình/giám sát |
-| `src/time_manager.*` | NTP và UTC timestamp |
+| `src/main.cpp` | Initialization and main loop |
+| `src/config.h` | GPIO, ADC, battery thresholds, MQTT, and timing |
+| `src/battery_manager.*` | ADC readings and battery data conversion |
+| `src/sampling_manager.*` | Sampling and 1-minute/10-minute averages |
+| `src/identity_manager.*` | Gateway ID, device ID, and boot ID |
+| `src/settings_manager.*` | NVS storage for test, Wi-Fi, and MQTT settings |
+| `src/command_manager.*` | State machine, validation, and ACKs |
+| `src/telemetry_manager.*` | Payloads, LittleFS queue, and backfill |
+| `src/mqtt_manager.*` | MQTT over TLS, Last Will, reconnection, and PUBACK |
+| `src/ap_web_manager.*` | Web AP and configuration/monitoring API |
+| `src/time_manager.*` | NTP and UTC timestamps |
